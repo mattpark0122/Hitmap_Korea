@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>한국 증시 히트맵</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">
+      <div class="mkt" role="group" aria-label="시장 선택">
+        <button type="button" data-mkt="kospi" aria-pressed="true">코스피</button>
+        <button type="button" data-mkt="kosdaq" aria-pressed="false">코스닥</button>
+      </div>
+      <h1 id="h1">코스피 히트맵</h1>
+      <div class="stamp" id="stamp">불러오는 중…</div>
+    </div>
+    <div class="idx" id="idx"></div>
+  </header>
+
+  <div class="bar">
+    <label for="date">날짜 <select id="date"></select></label>
+    <label for="nsec">표시 섹터
+      <select id="nsec">
+        <option value="5">5개</option><option value="10" selected>10개</option><option value="15">15개</option>
+        <option value="20">20개</option><option value="all">전체</option>
+      </select>
+    </label>
+    <label for="topn">섹터별 종목
+      <select id="topn">
+        <option value="10">상위 10</option><option value="20" selected>상위 20</option><option value="30">상위 30</option>
+        <option value="40">상위 40</option><option value="50">상위 50</option>
+      </select>
+    </label>
+    <label for="range">색 범위
+      <select id="range"><option value="3">±3%</option><option value="5" selected>±5%</option><option value="10">±10%</option></select>
+    </label>
+    <div class="legend" aria-hidden="true">
+      <span id="lgL">−5%</span><span class="grad" id="grad"></span><span id="lgR">+5%</span>
+    </div>
+  </div>
+
+  <div class="note" id="note" hidden></div>
+  <div id="map" role="img" aria-label="섹터별 시가총액 트리맵"></div>
+  <div class="foot">
+    <div class="shown" id="shown"></div>
+    <ol class="chips" id="chips" aria-label="표시 중인 섹터 (변동폭 순)"></ol>
+    <div class="stats" id="stats"></div>
+  </div>
+</div>
+<div id="tip" hidden></div>
+<aside id="news" class="drawer" hidden aria-labelledby="newsTitle">
+  <div class="dh">
+    <div class="dhx">
+      <div class="dk">섹터 기사</div>
+      <h2 id="newsTitle"></h2>
+      <div class="dm" id="newsMeta"></div>
+    </div>
+    <button type="button" id="newsClose" aria-label="기사 패널 닫기">✕</button>
+  </div>
+  <div class="dstocks" id="newsStocks"></div>
+  <ol class="dlist" id="newsList"></ol>
+  <div class="dfoot" id="newsFoot">출처: 네이버 금융 종목 뉴스 · 제목과 원문 링크만 표시합니다</div>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
