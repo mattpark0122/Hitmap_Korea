@@ -1,0 +1,89 @@
+# 히트맵을 GitHub Pages로 배포하고, 평일마다 데이터를 자동 수집한다.
+#
+# - push(main)            : 수집 없이 바로 배포
+# - 평일 16:05 KST        : collect.py (시세 + 섹터 기사) → data/ 커밋 → 배포
+# - 평일 08:40 KST        : news.py --force (전날 저녁~아침 기사 보강) → 커밋 → 배포
+# - 수동 실행(Run workflow): collect.py → 커밋 → 배포
+#
+# KRX_ID / KRX_PW 를 저장소 Secrets에 넣으면 pykrx(KRX)로, 없으면 네이버 금융으로 수집한다.
+# GitHub cron은 UTC 기준이고 몇 분~수십 분 늦게 시작될 수 있다.
+name: Collect & deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "5 7 * * 1-5"    # 월~금 16:05 KST
+    - cron: "40 23 * * 0-4"  # 월~금 08:40 KST (UTC 일~목 23:40)
+
+permissions:
+  contents: write   # 수집한 data/ 커밋
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests pykrx
+
+      - name: 시세 + 섹터 기사 수집
+        if: github.event.schedule != '40 23 * * 0-4'
+        env:
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
+        run: python scripts/collect.py
+
+      - name: 섹터 기사 다시 수집
+        if: github.event.schedule == '40 23 * * 0-4'
+        run: python scripts/news.py --force
+
+      - name: data/ 커밋
+        run: |
+          git add data
+          if git diff --cached --quiet; then
+            echo "바뀐 데이터 없음"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -m "data: $(TZ=Asia/Seoul date +%Y-%m-%d) 자동 수집"
+          git push
+
+  deploy:
+    needs: collect
+    # push 때는 collect가 skipped, 수집 실패 시에는 배포하지 않는다.
+    if: ${{ !cancelled() && (needs.collect.result == 'success' || needs.collect.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main   # collect가 방금 푸시한 커밋까지 포함
+
+      - name: 사이트 파일 모으기
+        run: |
+          mkdir _site
+          cp -R index.html assets data _site/
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

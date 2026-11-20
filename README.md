@@ -56,7 +56,34 @@ python -m http.server 8000
 ```
 → http://localhost:8000/#kospi 또는 http://localhost:8000/#kosdaq (특정 날짜: `#kosdaq/20261105`)
 
-- 섹터 순위: 섹터 전체 종목의 시총가중 평균 등락률 절댓값(변동폭) 순. 종목 수(상위 N)로 자르기 전에 계산합니다.
+- 섹터 순위: '섹터 정렬'에서 고릅니다. 기준은 섹터 전체 종목의 시총가중 평균 등락률이고, 종목 수(상위 N)로 자르기 전에 계산합니다.
+  - 변동폭 순(기본): 등락률 절댓값이 큰 순
+  - 상승률 순: 많이 오른 순. 오른 섹터가 없으면 덜 떨어진 섹터부터 나오고 안내 문구가 붙습니다.
+  - 하락률 순: 많이 내린 순. 내린 섹터가 없으면 덜 오른 섹터부터 나옵니다.
 - 표시 섹터 수(5/10/15/20/전체)로 고른 섹터만 그리고, 트리맵 안 배치는 시총 크기 기준입니다.
 - 섹터 제목(트리맵)이나 아래 섹터 목록을 누르면 관련 기사 패널이 열립니다. 데스크톱은 오른쪽 패널, 모바일은 하단 시트로 열리고 Esc나 ✕로 닫습니다.
-- 매일 자동 수집은 Windows 작업 스케줄러에서 평일 16:00에 `python scripts/collect.py`를 돌리면 됩니다.
+- 매일 자동 수집은 아래 GitHub Actions가 합니다. 로컬에서만 쓸 때는 Windows 작업 스케줄러 등으로 평일 16:00에 `python scripts/collect.py`를 돌리면 됩니다.
+
+## 3. 웹 배포 (GitHub Pages + Actions)
+
+`.github/workflows/pages.yml` 하나로 수집과 배포를 함께 합니다.
+
+| 언제 | 하는 일 |
+|---|---|
+| `main`에 push | 수집 없이 바로 배포 |
+| 평일 16:05 KST | `collect.py`(시세 + 섹터 기사) → `data/` 커밋 → 배포 |
+| 평일 08:40 KST | `news.py --force`(전날 저녁~아침 기사 보강) → 커밋 → 배포 |
+| Actions 탭에서 Run workflow | `collect.py` → 커밋 → 배포 |
+
+처음 한 번 설정
+1. 저장소 **Settings → General → Danger Zone → Change visibility**에서 Public으로 전환 (무료 요금제의 Pages 조건)
+2. **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 선택
+3. (선택) **Settings → Secrets and variables → Actions**에 `KRX_ID`, `KRX_PW` 추가. 없으면 네이버 금융으로 수집합니다.
+4. **Actions → Collect & deploy → Run workflow**로 한 번 실행해 수집·배포가 되는지 확인
+
+주소: `https://<아이디>.github.io/Hitmap_Korea/#kospi`
+
+- 사이트에는 `index.html`, `assets/`, `data/`만 올라갑니다.
+- 수집이 실패하면 그 회차는 배포하지 않고, 이전 데이터가 그대로 보입니다. Actions 탭에서 로그를 확인하세요.
+- GitHub cron은 UTC 기준이며 몇 분~수십 분 늦게 시작될 수 있습니다. 공휴일에는 `collect.py`가 직전 거래일을 처리하고 이미 있는 파일은 건드리지 않습니다.
+- GitHub 서버는 해외에 있어서 네이버 API가 응답하지 않으면 수집이 실패할 수 있습니다. 그때는 `KRX_ID`/`KRX_PW`를 넣거나 로컬에서 수집 후 push하세요.

@@ -2,6 +2,8 @@
 
 KRX 업종분류와 네이버 업종 모두에서 업종을 찾지 못한 종목에만 쓴다.
 """
+from __future__ import annotations
+
 import re
 
 SECT = {
