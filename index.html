@@ -24,6 +24,11 @@
 
   <div class="bar">
     <label for="date">날짜 <select id="date"></select></label>
+    <label for="sort">섹터 정렬
+      <select id="sort">
+        <option value="move" selected>변동폭 순</option><option value="up">상승률 순</option><option value="down">하락률 순</option>
+      </select>
+    </label>
     <label for="nsec">표시 섹터
       <select id="nsec">
         <option value="5">5개</option><option value="10" selected>10개</option><option value="15">15개</option>
@@ -48,7 +53,7 @@
   <div id="map" role="img" aria-label="섹터별 시가총액 트리맵"></div>
   <div class="foot">
     <div class="shown" id="shown"></div>
-    <ol class="chips" id="chips" aria-label="표시 중인 섹터 (변동폭 순)"></ol>
+    <ol class="chips" id="chips" aria-label="표시 중인 섹터"></ol>
     <div class="stats" id="stats"></div>
   </div>
 </div>

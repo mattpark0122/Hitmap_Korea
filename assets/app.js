@@ -14,13 +14,13 @@ const PREF_KEY = "hitmap-korea:prefs";
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
-    for (const id of ["nsec", "topn", "range"]) {
+    for (const id of ["sort", "nsec", "topn", "range"]) {
       if (p[id] && [...$(id).options].some(o => o.value === p[id])) $(id).value = p[id];
     }
   } catch { /* ignore */ }
 }
 function savePrefs() {
-  try { localStorage.setItem(PREF_KEY, JSON.stringify({ nsec: $("nsec").value, topn: $("topn").value, range: $("range").value })); }
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ sort: $("sort").value, nsec: $("nsec").value, topn: $("topn").value, range: $("range").value })); }
   catch { /* ignore */ }
 }
 
@@ -146,18 +146,28 @@ function marketStats(stocks) {
   };
 }
 
-// 섹터 전체 종목 기준으로 변동폭(|시총가중 평균 등락률|)을 계산해 순위를 매긴다.
+// 섹터 정렬 기준. 등락률은 섹터 전체 종목의 시총가중 평균이고, 값이 없는 섹터는 맨 뒤로 보낸다.
+// 상승률 순은 등락률 내림차순이라 오른 섹터가 하나도 없으면 자연히 덜 떨어진 섹터부터 나온다(하락률 순도 대칭).
+// 그때는 none 문구로 그 사실을 알려 준다.
+const SORTS = {
+  move: { label: "변동폭", key: s => (s.avg == null ? -Infinity : Math.abs(s.avg)) },
+  up: { label: "상승률", key: s => (s.avg == null ? -Infinity : s.avg), hit: s => s.avg > 0, none: "오른 섹터가 없어 덜 떨어진 순" },
+  down: { label: "하락률", key: s => (s.avg == null ? -Infinity : -s.avg), hit: s => s.avg < 0, none: "내린 섹터가 없어 덜 오른 순" },
+};
+const sortMode = () => SORTS[$("sort").value] || SORTS.move;
+
+// 섹터 전체 종목 기준으로 시총가중 평균 등락률을 계산해 고른 기준으로 순위를 매긴다.
 // 상위 N개 종목으로 자르기 전에 계산하므로 '섹터별 종목 수'를 바꿔도 순위가 변하지 않는다.
-function rankSectors(stocks) {
+function rankSectors(stocks, mode) {
   const groups = d3.group(stocks.filter(s => s.cap > 0), s => s.sector || "기타");
   const out = [];
   for (const [name, list] of groups) {
     const known = list.filter(s => s.chg != null);
     const kcap = d3.sum(known, s => s.cap);
     const avg = kcap ? d3.sum(known, s => s.cap * s.chg) / kcap : null;
-    out.push({ name, stocks: list.sort((a, b) => b.cap - a.cap), avg, move: avg == null ? -1 : Math.abs(avg), cap: d3.sum(list, s => s.cap) });
+    out.push({ name, stocks: list.sort((a, b) => b.cap - a.cap), avg, cap: d3.sum(list, s => s.cap) });
   }
-  return out.sort((a, b) => b.move - a.move || b.cap - a.cap);
+  return out.sort((a, b) => mode.key(b) - mode.key(a) || b.cap - a.cap);
 }
 
 // ---------- 색 ----------
@@ -192,7 +202,8 @@ function render() {
   el.style.height = H + "px";
   el.innerHTML = "";
 
-  const ranked = rankSectors(state.data.stocks);
+  const mode = sortMode();
+  const ranked = rankSectors(state.data.stocks, mode);
   const nsecV = $("nsec").value, K = nsecV === "all" ? ranked.length : Math.min(+nsecV, ranked.length);
   const N = +$("topn").value;
   const shown = ranked.slice(0, K);
@@ -213,7 +224,7 @@ function render() {
     Object.assign(h.style, { left: s.x0 + "px", top: s.y0 + "px", width: w + "px" });
     h.innerHTML = `<span class="nm">${esc(s.data.name)}</span>` +
       (w >= 72 ? `<span class="pc ${cls(s.data.avg)}">${fmtChg(s.data.avg)}</span>` : "");
-    h.title = `${s.data.name} ${fmtChg(s.data.avg)} · 변동폭 ${rankOf.get(s.data.name)}위 · 눌러서 관련 기사 보기`;
+    h.title = `${s.data.name} ${fmtChg(s.data.avg)} · ${mode.label} ${rankOf.get(s.data.name)}위 · 눌러서 관련 기사 보기`;
     frag.appendChild(h);
   }
   for (const leaf of root.leaves()) {
@@ -234,9 +245,11 @@ function render() {
 
   // 표시 범위 안내
   const hidden = ranked.length - K;
+  const noHit = mode.hit && ranked.length && !ranked.some(mode.hit);
+  const order = noHit ? mode.none : `${mode.label} 순`;
   $("shown").innerHTML = nsecV === "all" || hidden === 0
-    ? `전체 <b>${ranked.length}</b>개 섹터 표시 중`
-    : `변동폭 순으로 상위 <b>${K}</b>개 섹터 표시 중 <span class="h">· ${hidden}개 섹터 숨김</span>`;
+    ? `전체 <b>${ranked.length}</b>개 섹터 표시 중${noHit ? ` <span class="h">· ${order}</span>` : ""}`
+    : `${order}으로 상위 <b>${K}</b>개 섹터 표시 중 <span class="h">· ${hidden}개 섹터 숨김</span>`;
   $("chips").innerHTML = shown.map((s, i) => {
     const n = newsFor(s.name);
     return `<li><button type="button" data-sec="${esc(s.name)}" class="${s.name === state.openSector ? "active" : ""}" title="${esc(s.name)} 관련 기사 보기">` +
@@ -285,7 +298,7 @@ function renderNews() {
   const idx = state.ranked.findIndex(s => s.name === name), sec = state.ranked[idx];
   if (!sec) { closeNews(); return; }
   $("newsTitle").innerHTML = `${esc(name)}<span class="pc ${cls(sec.avg)}">${fmtChg(sec.avg)}</span>`;
-  $("newsMeta").textContent = `${MARKETS[state.market].name} · ${fmtDate(state.data.date)} · 변동폭 ${idx + 1}위 / ${state.ranked.length} · ${sec.stocks.length}종목`;
+  $("newsMeta").textContent = `${MARKETS[state.market].name} · ${fmtDate(state.data.date)} · ${sortMode().label} ${idx + 1}위 / ${state.ranked.length} · ${sec.stocks.length}종목`;
   // 시총 상위 + 크게 움직인 종목
   const top = sec.stocks.slice(0, 3);
   const movers = sec.stocks.filter(s => s.chg != null && !top.includes(s)).sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg)).slice(0, 2);
@@ -316,7 +329,7 @@ function showTip(e) {
   const t = e.target.closest(".tile"); if (!t) { tip.hidden = true; return; }
   const d = t._d;
   tip.innerHTML = `<div class="t">${esc(d.name)} <span style="font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400">${d.code}</span></div>
-    <div class="s">${esc(d.sector)} <span class="${cls(d.secAvg)}">${fmtChg(d.secAvg)}</span> · 변동폭 ${d.secRank}위</div>
+    <div class="s">${esc(d.sector)} <span class="${cls(d.secAvg)}">${fmtChg(d.secAvg)}</span> · ${sortMode().label} ${d.secRank}위</div>
     <div class="row"><span>등락률</span><span class="${cls(d.chg)}">${fmtChg(d.chg)}</span></div>
     ${d.close != null ? `<div class="row"><span>종가</span><span>${Math.round(d.close).toLocaleString()}원</span></div>` : ""}
     <div class="row"><span>시가총액</span><span>${fmtCap(d.cap)}</span></div>`;
@@ -340,6 +353,7 @@ for (const b of document.querySelectorAll(".mkt button")) {
   });
 }
 $("date").addEventListener("change", e => { state.date = e.target.value; writeHash(); load(); });
+$("sort").addEventListener("change", () => { savePrefs(); render(); renderNews(); });
 $("nsec").addEventListener("change", () => { savePrefs(); render(); });
 $("topn").addEventListener("change", () => { savePrefs(); render(); });
 $("range").addEventListener("change", () => { savePrefs(); updateLegend(); render(); });
