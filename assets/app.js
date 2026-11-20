@@ -50,9 +50,10 @@ function writeHash() {
 }
 
 // ---------- 데이터 ----------
+let bust = "";   // '최신 정보'를 누르면 ?t=… 를 붙여 Pages CDN·브라우저 캐시를 건너뛴다
 function getJSON(url) {
   if (!cache.has(url)) {
-    cache.set(url, fetch(url, { cache: "no-cache" }).then(r => {
+    cache.set(url, fetch(url + bust, { cache: "no-cache" }).then(r => {
       if (!r.ok) throw new Error(`${url} (${r.status})`);
       return r.json();
     }).catch(e => { cache.delete(url); throw e; }));
@@ -344,6 +345,144 @@ $("map").addEventListener("pointerleave", e => { if (e.pointerType === "mouse") 
 document.addEventListener("pointerdown", e => { if (!e.target.closest("#map")) tip.hidden = true; });
 addEventListener("scroll", () => { tip.hidden = true; }, { passive: true });
 
+// ---------- 최신 정보 갱신 ----------
+// 모든 방문자: 배포된 최신 JSON을 캐시 없이 다시 읽는다.
+// 소유자: 이 브라우저에 GitHub 토큰(Actions: Read and write)을 저장해 두면 수집 워크플로를 실행하고,
+//        끝날 때까지 상태를 보여 준 뒤 새 데이터를 다시 읽는다. 토큰은 localStorage 에만 둔다.
+const GH = (() => {
+  // 배포 주소 <owner>.github.io/<repo>/ 에서 저장소를 알아낸다. 로컬 등에서는 기본값.
+  const m = location.hostname.match(/^([^.]+)\.github\.io$/i), seg = location.pathname.split("/").filter(Boolean)[0];
+  return { repo: m && seg ? `${m[1]}/${seg}` : "mattpark0122/Hitmap_Korea", workflow: "pages.yml", api: "https://api.github.com" };
+})();
+const TOKEN_KEY = "hitmap-korea:gh-token";
+const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
+const setToken = t => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ } };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hhmm = (d = new Date()) => d.toTimeString().slice(0, 5);
+const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const shortDate = s => `${s.slice(4, 6)}.${s.slice(6, 8)}`;
+let updating = false;
+
+function setUpd(html, kind) {
+  const m = $("updMsg");
+  m.innerHTML = html || ""; m.className = "umsg" + (kind ? " " + kind : "");
+}
+function syncUpdUI() {
+  const owner = !!getToken();
+  $("refreshLabel").textContent = owner ? "최신 수집" : "최신 정보";
+  $("refresh").classList.toggle("owner", owner);
+  $("refresh").title = owner ? "수집 워크플로를 실행하고 끝나면 새 데이터를 반영합니다 (소유자)" : "배포된 최신 데이터를 다시 불러옵니다";
+  $("ownerBtn").hidden = !(owner || new URLSearchParams(location.search).has("owner"));
+}
+function setBusy(on) {
+  updating = on;
+  $("refresh").disabled = on; $("refresh").classList.toggle("busy", on);
+}
+
+// 배포된 JSON 을 캐시 없이 다시 읽고, 최신 날짜가 바뀌었는지 알려 준다.
+async function reloadData() {
+  const before = (await getDates(state.market))[0];
+  bust = "?t=" + Date.now();
+  cache.clear();
+  await load();
+  const after = (await getDates(state.market))[0];
+  return { before, after };
+}
+function reloadMsg({ before, after }, prefix = "") {
+  if (!after) return setUpd(prefix + "데이터를 불러오지 못했어요", "err");
+  if (after !== before) return setUpd(`${prefix}새 데이터 <b>${shortDate(after)}</b> 반영 · ${hhmm()}`, "ok");
+  setUpd(`${prefix}${hhmm()} 확인 · 최신 ${shortDate(after)} 그대로`);
+}
+
+async function gh(path, opts = {}) {
+  const headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", Authorization: "Bearer " + (opts.token || getToken()) };
+  if (opts.body) headers["Content-Type"] = "application/json";
+  const r = await fetch(GH.api + path, { method: opts.method || "GET", headers, body: opts.body, cache: "no-store" });
+  if (!r.ok) {
+    const e = new Error(r.status === 401 ? "토큰이 유효하지 않거나 만료됐어요"
+      : r.status === 403 || r.status === 404 ? "토큰 권한이 부족해요 (이 저장소의 Actions: Read and write 필요)"
+        : `GitHub API 오류 (${r.status})`);
+    e.status = r.status; throw e;
+  }
+  return r.status === 204 ? null : r.json().catch(() => null);
+}
+const runsPath = q => `/repos/${GH.repo}/actions/workflows/${GH.workflow}/runs?per_page=5${q || ""}`;
+
+async function collectAndReload() {
+  const t0 = Date.now();
+  let run = null, timer = null;
+  const runLink = () => (run ? ` · <a href="${esc(run.html_url)}" target="_blank" rel="noopener noreferrer">로그</a>` : "");
+  try {
+    // 이미 돌고 있는 실행(스케줄 수집 포함)이 있으면 새로 띄우지 않고 그 실행을 따라간다.
+    setUpd("수집 실행 요청 중…");
+    const active = await gh(runsPath());
+    run = (active.workflow_runs || []).find(r => r.status !== "completed" && r.event !== "push") || null;
+    if (!run) {
+      await gh(`/repos/${GH.repo}/actions/workflows/${GH.workflow}/dispatches`, { method: "POST", body: JSON.stringify({ ref: "main" }) });
+      // 디스패치 API는 실행 ID를 돌려주지 않으므로 방금 생긴 workflow_dispatch 실행을 찾는다 (시계 차이 1분 허용).
+      for (let i = 0; i < 30 && !run; i++) {
+        await sleep(i ? 4000 : 2500);
+        const d = await gh(runsPath("&event=workflow_dispatch"));
+        run = (d.workflow_runs || []).find(r => Date.parse(r.created_at) >= t0 - 60000) || null;
+      }
+      if (!run) throw new Error("실행이 시작되지 않았어요. Actions 탭을 확인해 주세요");
+    }
+    const started = Date.parse(run.run_started_at || run.created_at) || t0;
+    const tick = () => setUpd(`수집 중 ${mmss(Date.now() - started)} <span class="h">(보통 3~4분)</span>${runLink()}`);
+    tick(); timer = setInterval(tick, 1000);
+    for (const end = Date.now() + 20 * 60000; run.status !== "completed";) {
+      if (Date.now() > end) throw new Error("20분이 지나도 끝나지 않았어요");
+      await sleep(6000);
+      run = await gh(`/repos/${GH.repo}/actions/runs/${run.id}`);
+    }
+    clearInterval(timer); timer = null;
+    if (run.conclusion !== "success") { setUpd(`수집 실패 (${esc(run.conclusion || "unknown")})${runLink()}`, "err"); return; }
+    setUpd("수집 완료 · 데이터 다시 읽는 중…");
+    reloadMsg(await reloadData(), "수집 완료 · ");
+  } catch (e) {
+    setUpd(esc(e.message || String(e)) + runLink(), "err");
+    if (e.status === 401) syncUpdUI();
+  } finally {
+    if (timer) clearInterval(timer);
+  }
+}
+
+$("refresh").addEventListener("click", async () => {
+  if (updating) return;
+  setBusy(true);
+  try {
+    if (getToken()) await collectAndReload();
+    else { setUpd("불러오는 중…"); reloadMsg(await reloadData()); }
+  } finally { setBusy(false); }
+});
+
+// 소유자 토큰 설정 (주소에 ?owner 가 있거나 토큰이 저장돼 있을 때만 ⚙ 버튼이 보인다)
+const ownerMsg = (t, kind) => { $("ownerMsg").textContent = t || ""; $("ownerMsg").className = "omsg" + (kind ? " " + kind : ""); };
+$("ownerBtn").addEventListener("click", () => {
+  $("ownerToken").value = "";
+  ownerMsg(getToken() ? "토큰이 저장돼 있어요. 새 토큰을 넣으면 바꿉니다." : `저장소: ${GH.repo}`);
+  $("ownerClear").hidden = !getToken();
+  $("ownerDlg").showModal();
+  $("ownerToken").focus();
+});
+$("ownerCancel").addEventListener("click", () => $("ownerDlg").close());
+$("ownerClear").addEventListener("click", () => {
+  setToken(""); syncUpdUI(); setUpd("소유자 토큰을 삭제했어요"); $("ownerDlg").close();
+});
+$("ownerForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const t = $("ownerToken").value.trim();
+  if (!t) { ownerMsg("토큰을 입력해 주세요", "err"); return; }
+  $("ownerSave").disabled = true; ownerMsg("권한 확인 중…");
+  try {
+    await gh(runsPath(), { token: t });   // Actions 읽기 권한 확인 (쓰기 권한은 첫 실행 때 확인됨)
+    setToken(t); syncUpdUI(); $("ownerDlg").close();
+    setUpd("소유자 토큰 저장됨 · '최신 수집'으로 수집을 실행할 수 있어요", "ok");
+  } catch (err) {
+    ownerMsg(err.message, "err");
+  } finally { $("ownerSave").disabled = false; }
+});
+
 // ---------- 이벤트 ----------
 for (const b of document.querySelectorAll(".mkt button")) {
   b.addEventListener("click", () => {
@@ -368,6 +507,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rerender);
 new MutationObserver(rerender).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
 loadPrefs();
+syncUpdUI();
 Object.assign(state, parseHash());
 writeHash();
 updateLegend();

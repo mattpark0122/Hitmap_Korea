@@ -18,6 +18,11 @@
       </div>
       <h1 id="h1">코스피 히트맵</h1>
       <div class="stamp" id="stamp">불러오는 중…</div>
+      <div class="upd">
+        <button type="button" id="refresh" class="ubtn"><span class="ic" aria-hidden="true">↻</span><span id="refreshLabel">최신 정보</span></button>
+        <button type="button" id="ownerBtn" class="ubtn icon" hidden aria-label="소유자 설정: 수집 토큰" title="소유자 설정 (수집 실행 토큰)">⚙</button>
+        <span class="umsg" id="updMsg" role="status" aria-live="polite"></span>
+      </div>
     </div>
     <div class="idx" id="idx"></div>
   </header>
@@ -71,6 +76,23 @@
   <ol class="dlist" id="newsList"></ol>
   <div class="dfoot" id="newsFoot">출처: 네이버 금융 종목 뉴스 · 제목과 원문 링크만 표시합니다</div>
 </aside>
+
+<dialog id="ownerDlg" aria-labelledby="ownerTitle">
+  <form id="ownerForm">
+    <h2 id="ownerTitle">수집 실행 토큰 (소유자용)</h2>
+    <p>이 저장소에 <b>Actions: Read and write</b> 권한만 준 GitHub fine-grained 토큰을 넣으면 '최신 수집' 버튼이 수집 워크플로를 실행하고, 끝나면 새 데이터를 반영합니다.</p>
+    <p class="sm">토큰은 이 브라우저에만 저장되고 서버나 다른 방문자에게 전달되지 않습니다. 공용 PC에서는 쓰지 마세요.</p>
+    <label for="ownerToken">토큰</label>
+    <input type="password" id="ownerToken" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+    <div class="omsg" id="ownerMsg" role="status" aria-live="polite"></div>
+    <div class="obtns">
+      <button type="button" id="ownerClear">토큰 삭제</button>
+      <span class="sp"></span>
+      <button type="button" id="ownerCancel">닫기</button>
+      <button type="submit" id="ownerSave" class="pri">확인 후 저장</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="assets/app.js"></script>

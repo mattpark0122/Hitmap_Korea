@@ -83,6 +83,17 @@ python -m http.server 8000
 
 주소: `https://<아이디>.github.io/Hitmap_Korea/#kospi`
 
+### '최신 정보' 버튼
+- **방문자**: 배포된 최신 데이터를 캐시 없이 다시 읽습니다. 새 날짜가 들어왔으면 "새 데이터 MM.DD 반영"이 표시됩니다.
+- **소유자**: 버튼으로 수집 워크플로를 실행할 수 있습니다.
+  1. GitHub **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**
+     - Repository access: **Only select repositories → Hitmap_Korea**
+     - Permissions: **Actions → Read and write** (Metadata: Read는 자동)
+  2. 사이트를 `https://<아이디>.github.io/Hitmap_Korea/?owner#kospi`로 열고 ⚙ 버튼에 토큰 저장
+  3. 이후 버튼이 '최신 수집'으로 바뀌고, 누르면 수집 실행 → 진행 시간 표시(보통 3~4분) → 끝나면 새 데이터 반영
+- 이미 수집이 돌고 있으면(평일 스케줄 포함) 새로 실행하지 않고 그 실행을 따라갑니다.
+- 토큰은 그 브라우저의 localStorage에만 저장됩니다. `<아이디>.github.io` 아래 다른 Pages 사이트와 저장 공간을 공유하므로 이 저장소 전용·Actions 권한만 있는 토큰을 쓰고, 공용 PC에서는 쓰지 마세요. ⚙ → '토큰 삭제'로 지울 수 있습니다.
+
 - 사이트에는 `index.html`, `assets/`, `data/`만 올라갑니다.
 - 수집이 실패하면 그 회차는 배포하지 않고, 이전 데이터가 그대로 보입니다. Actions 탭에서 로그를 확인하세요.
 - GitHub cron은 UTC 기준이며 몇 분~수십 분 늦게 시작될 수 있습니다. 공휴일에는 `collect.py`가 직전 거래일을 처리하고 이미 있는 파일은 건드리지 않습니다.
